@@ -171,6 +171,7 @@ sub process_client_request
 			{
 				@subnets = split /,/, $aliases{$alias}{match_client_ip};
 			}
+			
 			my $client = getpeername($c);
 			my ($port, $iaddr) = unpack_sockaddr_in($client);
 			my $client_ip = inet_ntoa($iaddr);
@@ -216,6 +217,13 @@ sub process_client_request
 							{
 								# Skip . and ..
 								next if $entry =~ /^\./;
+								
+								# --- HIDE SENSITIVE FILES UNLESS ALLOWED IN PANEL ---
+								if ($entry =~ /\.(cfg|sma|ini|gam|log|sql)$/i) {
+									my ($f_ext) = $entry =~ /\.([^.]+)$/;
+									next unless grep { lc($_) eq lc($f_ext) } @extensions;
+								}
+
 								my $link_location = $location."/".$entry;
 								if(-d $link_location)
 								{
@@ -264,8 +272,21 @@ sub process_client_request
 				else
 				{
 					my @extension = split /\./, $uri;
-					my $extension = $extension[-1];
-					if(grep {$_ eq $extension} @extensions or !grep {defined($_)} @extensions)
+					my $extension = lc($extension[-1]);
+
+					# --- FILE ACCESS LOGIC ---
+					# 1. Allow if extension is in the panel list
+					if(grep { lc($_) eq $extension } @extensions)
+					{
+						$c->send_file_response($location);
+					}
+					# 2. Block sensitive files if NOT in the panel list
+					elsif($extension =~ /^(cfg|sma|ini|gam|log|sql)$/)
+					{
+						$c->send_error(403,"");
+					}
+					# 3. Allow other files if panel list is empty
+					elsif(!@extensions)
 					{
 						$c->send_file_response($location);
 					}
